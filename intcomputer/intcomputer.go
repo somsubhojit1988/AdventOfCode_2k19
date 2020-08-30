@@ -204,29 +204,35 @@ func (c *IntComputer) MemorySize() int {
 	return len(c.State.InstructionSet)
 }
 
+func (c *IntComputer) execute(currInstruction *Instruction) {
+	c.State.CurrentAddrModes = currInstruction.AddrModes
+	c.State.ExecuteInstruction(currInstruction.Opcode)
+}
+
+func (c *IntComputer) updateState() {
+	ins := CreateInstruction(c.State.read(ImmediateMode, c.InstructionPtr))
+	c.execute(ins)
+
+	d := 0
+	switch ins.Opcode {
+	case Add, Mul:
+		d = 4
+	case Input, Output:
+		d = 2
+	case Halt:
+		d = c.MemorySize()
+	default:
+		panic(fmt.Sprintf("IntComputer: Unsupported opcode:%v\n", ins.Opcode))
+	}
+
+	c.InstructionPtr = Ptr(int(c.InstructionPtr) + d)
+	c.State.IncrementPtr(d)
+}
+
 // Run ... executes the provided instructions and produces an int result
 func (c *IntComputer) Run() int {
 	for !c.isHalted() {
-		ins := CreateInstruction(c.State.read(ImmediateMode, c.InstructionPtr))
-		c.logger.log(fmt.Sprintf("\n\n[IntComputer inPtr = %v] Executing:  instruction= %v \n",
-			c.InstructionPtr, ins.toString()))
-		c.State.CurrentAddrModes = ins.AddrModes
-		c.State.ExecuteInstruction(ins.Opcode)
-
-		d := 0
-		switch ins.Opcode {
-		case Add, Mul:
-			d = 4
-		case Input, Output:
-			d = 2
-		case Halt:
-			d = c.MemorySize()
-		default:
-			panic(fmt.Sprintf("IntComputer: Unsupported opcode:%v\n", ins.Opcode))
-		}
-
-		c.InstructionPtr = Ptr(int(c.InstructionPtr) + d)
-		c.State.IncrementPtr(d)
+		c.updateState()
 	}
 
 	return c.State.read(ImmediateMode, 0)
