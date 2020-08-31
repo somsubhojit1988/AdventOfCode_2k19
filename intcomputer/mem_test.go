@@ -16,6 +16,13 @@ func TestCreateInstruction(t *testing.T) {
 				AddrModes: []int{0, 1, 0},
 			},
 		},
+		{
+			n: 3,
+			ins: Instruction{
+				Opcode:    03,
+				AddrModes: []int{0, 0, 0},
+			},
+		},
 	}
 
 	for _, tc := range tt {
@@ -30,28 +37,6 @@ func TestCreateInstruction(t *testing.T) {
 			if m != expected.AddrModes[i] {
 				t.Errorf("Param[%v]  addressingMode = %v expected %v",
 					i+1, m, expected.AddrModes[i])
-			}
-		}
-	}
-}
-
-func TestMemRead(t *testing.T) {
-	tt := []struct {
-		ins      []int
-		expected []int
-	}{
-		{ins: []int{1002, 4, 3, 4, 33}, expected: []int{4, 3, 33}},
-	}
-
-	for _, tc := range tt {
-		instruction := CreateInstruction(tc.ins[0])
-		l := CreateLooger()
-		testObj := InitMemory(tc.ins, instruction.AddrModes, l)
-		params := testObj.ReadParams()
-
-		for i := range params {
-			if params[i] != tc.expected[i] {
-				t.Errorf("Params mismatch: read= %v expected = %v", params, tc.expected)
 			}
 		}
 	}
@@ -79,7 +64,7 @@ func TestExecuteInstruction(t *testing.T) {
 	for _, tc := range tt {
 		l.Clear()
 		ins := CreateInstruction(tc.input[0])
-		m := InitMemory(tc.input, ins.AddrModes, l)
+		m := InitMemory(tc.input, ins.AddrModes, l, nil, nil)
 		m.ExecuteInstruction(ins.Opcode)
 
 		for i, v := range m.InstructionSet {

@@ -2,6 +2,7 @@ package intcomputer
 
 import (
 	"fmt"
+	"strings"
 )
 
 const (
@@ -37,11 +38,6 @@ type Instruction struct {
 	AddrModes []int
 }
 
-func (p *Instruction) toString() string {
-	return fmt.Sprintf("{opcode: %s addressingModes:%v}",
-		p.getInstructionString(), p.AddrModes)
-}
-
 // CreateInstruction ... creates a new Instruction with supplied int instruction
 // ...extract opcode and parameter addressing modes
 func CreateInstruction(n int) *Instruction {
@@ -53,8 +49,8 @@ func CreateInstruction(n int) *Instruction {
 		n /= 10
 		m2 := n % 10 //param-2: addressing mode - 1000s place
 		n /= 10
-		m3 := n % 10 //param-3: addressing mode - 10_000s place
-		return opcode, m1, m2, m3
+		// m3 := n % 10 //param-3: addressing mode - 10_000s place
+		return opcode, m1, m2, ImmediateMode
 	}(n)
 
 	return &Instruction{
@@ -63,9 +59,9 @@ func CreateInstruction(n int) *Instruction {
 	}
 }
 
-func (p *Instruction) getInstructionString() string {
+func getInstructionString(opcode int) string {
 	var res string
-	switch p.Opcode {
+	switch opcode {
 	case Add:
 		res = "Add"
 	case Mul:
@@ -77,10 +73,19 @@ func (p *Instruction) getInstructionString() string {
 	case Halt:
 		res = "Halt"
 	default:
-		res = fmt.Sprintf("Unsupported opcode: %v", p.Opcode)
+		res = fmt.Sprintf("Unsupported opcode: %v", opcode)
 	}
 	return res
 }
+
+func (p *Instruction) toString() string {
+	return fmt.Sprintf("{opcode: %s addressingModes:%v}",
+		getInstructionString(p.Opcode), p.AddrModes)
+}
+
+type InputFunc func() int
+
+type OutputFunc func(int)
 
 // Memory ... used to store instruction set and fetch parameter values
 type Memory struct {
@@ -88,19 +93,37 @@ type Memory struct {
 	MemPtr           Ptr
 	CurrentAddrModes []int
 	logger           *Logger
+	inFunc           InputFunc
+	outFunc          OutputFunc
+	dumpEnabled      bool
 }
 
 // InitMemory ... initialize memory with instruction set, memory pointer to index-0
-func InitMemory(ins, modes []int, logger *Logger) *Memory {
+func InitMemory(ins, modes []int, logger *Logger, inFunc InputFunc, outFunc OutputFunc) *Memory {
 	return &Memory{
 		InstructionSet:   ins,
 		MemPtr:           Ptr(0),
 		CurrentAddrModes: modes,
 		logger:           logger,
+		inFunc:           inFunc,
+		outFunc:          outFunc,
+		dumpEnabled:      true,
 	}
 }
 func (m *Memory) dump() string {
-	return fmt.Sprintf("%v", m.InstructionSet)
+	if !m.dumpEnabled {
+		return ""
+	}
+
+	var b strings.Builder
+
+	for i, x := range m.InstructionSet {
+		fmt.Fprintf(&b, "%d: %d, ", i, x)
+	}
+
+	s := b.String()   // no copying
+	s = s[:b.Len()-2] // no copying (removes trailing ", ")
+	return fmt.Sprintf("[ %s ]", s)
 }
 
 func (m *Memory) toString() string {
@@ -119,16 +142,6 @@ func (m *Memory) read(mode int, ptr Ptr) int {
 	}
 }
 
-// ReadParams ... reads the parameter values based on currentAddressingModes
-// .. [Param:n, Param:n-1, ..,Param:0]
-func (m *Memory) ReadParams() []int {
-	return []int{
-		m.read(m.CurrentAddrModes[0], m.MemPtr+1),
-		m.read(m.CurrentAddrModes[1], m.MemPtr+2),
-		m.read(ImmediateMode, m.MemPtr+3),
-	}
-}
-
 // Write ... writes value: `v` at position: `pos`
 func (m *Memory) Write(v, pos int) {
 	m.InstructionSet[pos] = v
@@ -143,35 +156,48 @@ func (m *Memory) IncrementPtr(d int) {
 
 // ExecuteInstruction ... executes the supplied instruction
 func (m *Memory) ExecuteInstruction(opcode int) int {
-	m.logger.log(fmt.Sprintf("[Memory::ExecuteInstruction(%v)] memory: %v",
-		opcode, m.toString()))
+	m.logger.log(fmt.Sprintf("[Memory::ExecuteInstruction(%v{%v})] memory: %v",
+		opcode, getInstructionString(opcode), m.toString()))
 
-	params := m.ReadParams()
+	readParams := func(addrModes []int) []int {
+		ret := make([]int, len(addrModes))
+		for i := 0; i < len(addrModes); i++ {
+			ret[i] = m.read(m.CurrentAddrModes[i], Ptr(int(m.MemPtr)+i+1))
+		}
+		return ret
+	}
+
 	res := -1
 	switch opcode {
 
 	case Add:
-		res = params[0] + params[1]
-		// m.logger.log(fmt.Sprintf("[Memory]Add: params: %v result %v at %v",
-		// 	params, res, params[0]))
-		m.Write(res, params[2])
-
+		ps := readParams(m.CurrentAddrModes[:])
+		res := ps[0] + ps[1]
+		m.logger.log(fmt.Sprintf("[Memory]Add: result (%v) -> Memory[ %v ]",
+			res, ps[2]))
+		m.Write(res, ps[2])
 	case Mul:
-		res = params[0] * params[1]
-		// m.logger.log(fmt.Sprintf("[Memory] storing Mul result %v at %v",
-		// 	res, params[0]))
-		m.Write(res, params[2])
+		ps := readParams(m.CurrentAddrModes[:])
+		res := ps[0] * ps[1]
+		m.logger.log(fmt.Sprintf("[Memory]Mul: result( %v) -> Memory[ %v]",
+			res, ps[2]))
+		m.Write(res, ps[2])
 
 	case Input:
-		v := 1 // TODO: take user input
-		// m.logger.log(fmt.Sprintf("[Memory] storing Input value %v at %v",
-		// 	v, params[0]))
-		m.Write(v, params[0])
+		if m.CurrentAddrModes[0] != PositionMode {
+			panic(fmt.Sprintf("[Memory] Execute:i/p  Illegal addressingMode: %v",
+				m.CurrentAddrModes[0]))
+		}
+
+		v, ptr := m.inFunc(), m.read(ImmediateMode, m.MemPtr+1)
+		m.logger.log(fmt.Sprintf("[Memory]Input %v -> Memory[%v]", v, ptr))
+		m.Write(v, ptr)
 
 	case Output:
-		res = m.read(params[0], Ptr(params[0]))
-		// m.logger.log(fmt.Sprintf("[Memory] read Output value %v from %v",
-		// 	res, params[0]))
+		res := m.read(m.CurrentAddrModes[0], m.MemPtr+1)
+		m.logger.log(fmt.Sprintf("[Memory] Output <- Memory[addr mode: %v, ptr: %v] (%v) ",
+			m.CurrentAddrModes[0], m.MemPtr+1, res))
+		m.outFunc(res)
 	}
 	m.logger.log(fmt.Sprintf("[Memory-dump]\n%v\n", m.dump()))
 	return res
@@ -186,10 +212,16 @@ type IntComputer struct {
 }
 
 // CreateIntComputer ... create new int computer
-func CreateIntComputer(instructions []int, logger *Logger) *IntComputer {
+func CreateIntComputer(instructions []int,
+	logger *Logger,
+	inFunc InputFunc,
+	outFunc OutputFunc) *IntComputer {
+
 	ins := CreateInstruction(instructions[0])
 	return &IntComputer{
-		State:          InitMemory(instructions, ins.AddrModes, logger),
+		State: InitMemory(instructions,
+			ins.AddrModes, logger,
+			inFunc, outFunc),
 		InstructionPtr: Ptr(0),
 		logger:         logger,
 	}
@@ -211,6 +243,7 @@ func (c *IntComputer) execute(currInstruction *Instruction) {
 
 func (c *IntComputer) updateState() {
 	ins := CreateInstruction(c.State.read(ImmediateMode, c.InstructionPtr))
+	c.logger.log(fmt.Sprintf("[IntComputer]execyuting instrunction: %v", ins.toString()))
 	c.execute(ins)
 
 	d := 0
@@ -222,9 +255,9 @@ func (c *IntComputer) updateState() {
 	case Halt:
 		d = c.MemorySize()
 	default:
-		panic(fmt.Sprintf("IntComputer: Unsupported opcode:%v\n", ins.Opcode))
+		panic(fmt.Sprintf("IntComputer [InstructionPtr= %v]: Unsupported opcode:%v\n",
+			c.InstructionPtr, ins.Opcode))
 	}
-
 	c.InstructionPtr = Ptr(int(c.InstructionPtr) + d)
 	c.State.IncrementPtr(d)
 }

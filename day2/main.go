@@ -33,17 +33,19 @@ func readInput() []int {
 func main() {
 	instructions := readInput()
 	logger := intcomputer.CreateLooger()
-	c := intcomputer.CreateIntComputer(instructions, logger)
+	c := intcomputer.CreateIntComputer(instructions, logger, nil, nil)
 
 	// replace position 1 with the value 12 and
 	// replace position 2 with the value 2
 	c.Program(1, 12)
 	c.Program(2, 2)
-	log.Printf("result: %v", c.Run())
+	res := c.Run()
+
+	for _, l := range logger.Logs() {
+		log.Printf(l)
+	}
 
 	// Your puzzle answer should be:  4090689.
-	// for _, l := range logger.Logs() {
-	// 	log.Printf(l)
-	// }
+	log.Printf("result: %v", res)
 
 }
