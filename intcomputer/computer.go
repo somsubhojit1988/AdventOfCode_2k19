@@ -33,8 +33,8 @@ type Instruction struct {
 }
 
 type Memory struct {
-	Storage []int
-	MemPtr  int
+	storage []int
+	memPtr  int
 	logger  *Logger
 }
 
@@ -50,7 +50,13 @@ func (l *Logger) log(msg string) {
 }
 
 func (l *Logger) Logs() []string {
-	return l.buffer
+	ret := make([]string, len(l.buffer))
+	copy(ret, l.buffer)
+	return ret
+}
+
+func (l *Logger) clear() {
+	l.buffer = []string{}
 }
 
 type IntComputer struct {
@@ -62,7 +68,7 @@ type IntComputer struct {
 }
 
 func decode(ins int) *Instruction {
-	// M3 M2 M1 OP OP
+	// return opcode, {param-1-addrMode, parma-2-addrMode, ...}
 	parse := func(in int) (int, []int) {
 		op := in % 100
 		in /= 100
@@ -90,7 +96,7 @@ func decode(ins int) *Instruction {
 			ret = make([]int, 2)
 			ret[0] = in % 10
 			in /= 10
-			ret[1] = Immediate
+			ret[1] = in % 10
 		default:
 			// 0 params ex: Halt
 			ret = make([]int, 0)
@@ -125,6 +131,8 @@ func (i *Instruction) String() string {
 			ret = "LessThan"
 		case Equals:
 			ret = "Equals"
+		case Halt:
+			ret = "Halt"
 		default:
 			ret = "Unsupported instruction"
 		}
@@ -153,14 +161,14 @@ func (i *Instruction) String() string {
 }
 
 func (m *Memory) Size() int {
-	return len(m.Storage)
+	return len(m.storage)
 }
 
 func (m *Memory) String() string {
 	dump := func() string {
 		sb := &strings.Builder{}
 		cntr := 0
-		for i, v := range m.Storage {
+		for i, v := range m.storage {
 			cntr++
 			sb.WriteString(fmt.Sprintf("%d (%d) ", v, i))
 			if cntr >= 10 {
@@ -170,23 +178,23 @@ func (m *Memory) String() string {
 		}
 		return fmt.Sprintf("[ %s ]", sb.String())
 	}
-	return fmt.Sprintf("MEM: ptr= %d\n%s\n", m.MemPtr, dump())
+	return fmt.Sprintf("MEM: ptr= %d\n%s\n", m.memPtr, dump())
 }
 
 func (m *Memory) read(addrMode, d int) (int, error) {
 	var ret int
-	if m.MemPtr+d >= m.Size() {
+	if m.memPtr+d >= m.Size() {
 		return -1, fmt.Errorf("MEMREAD (addressing-mode= %d, addr = %d) Out of range",
-			addrMode, m.MemPtr+d)
+			addrMode, m.memPtr+d)
 	}
-	x := m.Storage[m.MemPtr+d]
+	x := m.storage[m.memPtr+d]
 	switch addrMode {
 	case Position:
 		if x >= m.Size() {
 			return -1, fmt.Errorf("MEMREAD (addressing-mode= %d, addr = %d) Out of range",
 				addrMode, x)
 		}
-		ret = m.Storage[x]
+		ret = m.storage[x]
 	case Immediate:
 		ret = x
 	}
@@ -197,15 +205,15 @@ func (m *Memory) readAddress(ptr int) (int, error) {
 	if ptr < 0 || ptr >= m.Size() {
 		return -1, fmt.Errorf("MEMREAD (addr = %d) Out of range", ptr)
 	}
-	return m.Storage[ptr], nil
+	return m.storage[ptr], nil
 }
 
 func (m *Memory) write(v, ptr int) error {
-	if ptr >= m.Size() {
+	if ptr < 0 || ptr >= m.Size() {
 		return fmt.Errorf("MEMWRITE (addr = %d  v= %d) Out of range",
 			ptr, v)
 	}
-	m.Storage[ptr] = v
+	m.storage[ptr] = v
 	return nil
 }
 
@@ -227,6 +235,62 @@ func (c *IntComputer) readParams(ins *Instruction) ([]int, error) {
 
 func (c *IntComputer) storeResult(v, ptr int) error {
 	return c.Mem.write(v, ptr)
+}
+
+func (c *IntComputer) jmpIfTrue(ins *Instruction) error {
+	params, err := c.readParams(ins)
+	if err != nil {
+		return err
+	}
+	v, ptr := params[0], params[1]
+	if v != 0 {
+		c.InPtr = ptr
+	} else {
+		c.InPtr += 3
+	}
+	return err
+}
+
+func (c *IntComputer) jmpIfFalse(ins *Instruction) error {
+	params, err := c.readParams(ins)
+	if err != nil {
+		return err
+	}
+	v, ptr := params[0], params[1]
+	if v == 0 {
+		c.InPtr = ptr
+	} else {
+		c.InPtr += 3
+	}
+	return err
+}
+
+func (c *IntComputer) lt(ins *Instruction) error {
+	params, err := c.readParams(ins)
+	if err != nil {
+		return err
+	}
+	if params[0] < params[1] {
+		err = c.Mem.write(1, params[2])
+	} else {
+		err = c.Mem.write(0, params[2])
+	}
+	c.InPtr += 4
+	return err
+}
+
+func (c *IntComputer) eq(ins *Instruction) error {
+	params, err := c.readParams(ins)
+	if err != nil {
+		return err
+	}
+	if params[0] == params[1] {
+		err = c.Mem.write(1, params[2])
+	} else {
+		err = c.Mem.write(0, params[2])
+	}
+	c.InPtr += 4
+	return err
 }
 
 func (c *IntComputer) add(ins *Instruction) error {
@@ -304,20 +368,28 @@ func (c *IntComputer) execute() error {
 	case Output:
 		c.output(ins)
 	case JmpIfTrue:
+		c.jmpIfTrue(ins)
 	case JmpIfFalse:
+		c.jmpIfFalse(ins)
 	case LessThan:
+		c.lt(ins)
 	case Equals:
+		c.eq(ins)
 	case Halt:
 		c.halt()
+	default:
+		return fmt.Errorf("Unsupported opcode")
 	}
-	c.Mem.MemPtr = c.InPtr
+	c.Mem.memPtr = c.InPtr
 	return err
 }
 
 func CreateIntComputer(instructions []int, logger *Logger,
 	in InputMethod, out OutputMethod) *IntComputer {
+	ins := make([]int, len(instructions))
+	copy(ins, instructions)
 	return &IntComputer{
-		Mem:     &Memory{Storage: instructions, MemPtr: 0, logger: logger},
+		Mem:     &Memory{storage: ins, memPtr: 0, logger: logger},
 		InPtr:   0,
 		InFunc:  in,
 		OutFunc: out,
@@ -338,7 +410,7 @@ func (c *IntComputer) ReadMemory(ptr, n int) ([]int, error) {
 		}
 		ret[i] = v
 	}
-	return ret, nil
+	return ret[:n], nil
 }
 
 func (c *IntComputer) Run() error {
@@ -347,4 +419,15 @@ func (c *IntComputer) Run() error {
 		err = c.execute()
 	}
 	return err
+}
+
+func (c *IntComputer) Reset() {
+	c.logger.clear()
+	c.Mem = &Memory{storage: []int{99}, memPtr: 0, logger: c.logger}
+	c.InPtr = 0
+}
+
+func (c *IntComputer) Program(instructions []int) {
+	c.Reset()
+	c.Mem = &Memory{storage: instructions, memPtr: 0, logger: c.logger}
 }

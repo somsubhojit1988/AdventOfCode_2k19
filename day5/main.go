@@ -9,7 +9,8 @@ import (
 	"github.com/som.subhojit1988/aoc_2k19/intcomputer"
 )
 
-const InputFileName = "day5-input.txt"
+const partOneInputFileName = "day5-part1-input.txt"
+const partTwoInputFileName = "day5-part2-input.txt"
 
 func readInstructions(fname string) []int {
 	wd, err := os.Getwd()
@@ -53,8 +54,8 @@ func printOutput(n int) {
 		status, n)
 }
 
-func main() {
-	input := readInstructions(InputFileName)
+func part1() {
+	input := readInstructions(partOneInputFileName)
 	logger := intcomputer.CreateLogger()
 	c := intcomputer.CreateIntComputer(input, logger, readInput, printOutput)
 
@@ -66,4 +67,23 @@ func main() {
 	// for _, l := range logger.Logs() {
 	// 	log.Printf(l)
 	// }
+}
+
+func part2() {
+	input := readInstructions(partTwoInputFileName)
+	logger := intcomputer.CreateLogger()
+	c := intcomputer.CreateIntComputer(input, logger, readInput, printOutput)
+
+	err := c.Run()
+	if err != nil {
+		panic(err)
+	}
+
+	// for _, l := range logger.Logs() {
+	// 	log.Printf(l)
+	// }
+}
+
+func main() {
+	part2()
 }
