@@ -55,10 +55,13 @@ func printOutput(n int) {
 
 func main() {
 	input := readInstructions(InputFileName)
-	logger := intcomputer.CreateLooger()
+	logger := intcomputer.CreateLogger()
 	c := intcomputer.CreateIntComputer(input, logger, readInput, printOutput)
 
-	c.Run()
+	err := c.Run() // ans: 9961446
+	if err != nil {
+		panic(err)
+	}
 
 	// for _, l := range logger.Logs() {
 	// 	log.Printf(l)
