@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -18,11 +17,7 @@ func readInstructions(fname string) []int {
 		panic(err)
 	}
 
-	fptr := flag.String("fpath",
-		fmt.Sprintf("%s/%s", wd, fname),
-		"file path to read from")
-
-	inreader := &inputreader.ReadInput{FileName: *fptr}
+	inreader := &inputreader.ReadInput{FileName: fmt.Sprintf("%s/%s", wd, fname)}
 	lines, err := inreader.GetLines()
 	if err != nil {
 		panic(err)
@@ -85,5 +80,6 @@ func part2() {
 }
 
 func main() {
+	part1()
 	part2()
 }
