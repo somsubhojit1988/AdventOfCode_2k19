@@ -54,8 +54,8 @@ type IntComputer struct {
 	OutFunc OutputMethod
 	logger  *Logger
 
-	//  xxxx xxxx xxxx b3 b2 b1 Halt
-	flags int16
+	//  xxxx xxxx xxxx b3 b2 Break Halt
+	flags uint16
 }
 
 func (c *IntComputer) readParams(ins *Instruction) ([]int, error) {
@@ -183,8 +183,12 @@ func (c *IntComputer) halt() {
 	c.flags |= 0x01
 }
 
-func (c *IntComputer) isHalted() bool {
+func (c *IntComputer) IsHalted() bool {
 	return ((c.flags & 0x01) != 0)
+}
+
+func (c *IntComputer) isBreak() bool {
+	return ((c.flags >> 1) & 0x01) != 0
 }
 
 func (c *IntComputer) execute() error {
@@ -253,19 +257,30 @@ func (c *IntComputer) ReadMemory(ptr, n int) ([]int, error) {
 
 func (c *IntComputer) Run() error {
 	var err error
-	for !c.isHalted() && err == nil {
+	for !c.IsHalted() && !c.isBreak() && err == nil {
 		err = c.execute()
 	}
 	return err
 }
 
 func (c *IntComputer) Reset() {
-	c.logger.clear()
 	c.Mem = &Memory{storage: []int{99}, memPtr: 0, logger: c.logger}
+	c.flags = 0
 	c.InPtr = 0
+
+	c.logger.clear()
 }
 
 func (c *IntComputer) Program(instructions []int) {
 	c.Reset()
 	c.Mem = &Memory{storage: instructions, memPtr: 0, logger: c.logger}
+}
+
+func (c *IntComputer) Break() {
+	c.flags |= 0b10
+}
+
+func (c *IntComputer) Resume() error {
+	c.flags &= 0xfffd
+	return c.Run()
 }

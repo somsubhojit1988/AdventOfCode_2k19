@@ -5,29 +5,32 @@ import (
 )
 
 const (
-	ampStateInit          = -1
-	ampStatePhaseProvided = 0
-	ampStateInputProvided = 1
+	ampStateInit              = -1
+	ampStatePhaseProvided     = 0
+	ampStateInputProvided     = 1
+	ampStateFinishedExecution = 2
 )
 
 type Amplifier struct {
-	c            *intcomputer.IntComputer
-	state        int
-	phase, input int
-	ampProgram   []int
+	c                    *intcomputer.IntComputer
+	state                int
+	phase, input, output int
+	ampProgram           []int
+	isFeedbackMode       bool
 }
 
 func CreateAmp(instructions []int,
 	logger *intcomputer.Logger, phase, input int,
-	outFunc intcomputer.OutputMethod) *Amplifier {
+	feedbackMode bool) *Amplifier {
 	prog := make([]int, len(instructions))
 	copy(prog, instructions)
 	a := &Amplifier{
-		c:          intcomputer.CreateIntComputer(instructions, logger, nil, outFunc),
-		state:      ampStateInit,
-		phase:      phase,
-		input:      input,
-		ampProgram: prog,
+		c:              intcomputer.CreateIntComputer(instructions, logger, nil, nil),
+		state:          ampStateInit,
+		phase:          phase,
+		input:          input,
+		ampProgram:     prog,
+		isFeedbackMode: feedbackMode,
 	}
 	a.c.InFunc = func() int {
 		ret := -1
@@ -41,11 +44,22 @@ func CreateAmp(instructions []int,
 		}
 		return ret
 	}
+	a.c.OutFunc = func(x int) {
+		a.output = x
+		if feedbackMode {
+			a.c.Break()
+		}
+	}
 	return a
 }
 
 func (a *Amplifier) Run(in int) error {
 	a.input = in
+	if a.c.IsHalted() {
+		a.state = ampStateFinishedExecution
+		return nil
+	}
+	a.c.Resume()
 	return a.c.Run()
 }
 
@@ -56,24 +70,20 @@ func (a *Amplifier) Reset() {
 }
 
 type SeriesAmpCircuit struct {
-	n       int
-	as      []*Amplifier
-	outFunc func(n int)
-	currOut int
+	n  int
+	as []*Amplifier
 }
 
-func CreateAmpCircuit(n int, pSettings []int,
-	instructions []int, logger *intcomputer.Logger) *SeriesAmpCircuit {
+func CreateAmpCircuit(
+	n int, pSettings []int,
+	instructions []int, logger *intcomputer.Logger,
+	feedbackMode bool) *SeriesAmpCircuit {
 	as := make([]*Amplifier, n)
 
-	circuit := &SeriesAmpCircuit{
-		n:       n,
-		currOut: 0,
-	}
-	circuit.outFunc = func(n int) { circuit.currOut = n }
+	circuit := &SeriesAmpCircuit{n: n}
 
 	for i := 0; i < n; i++ {
-		as[i] = CreateAmp(instructions, logger, pSettings[i], 0, circuit.outFunc)
+		as[i] = CreateAmp(instructions, logger, pSettings[i], 0, feedbackMode)
 	}
 
 	circuit.as = as
@@ -82,14 +92,19 @@ func CreateAmpCircuit(n int, pSettings []int,
 }
 
 func (ac *SeriesAmpCircuit) Run(circuitIn int, feedbackMode bool) (int, error) {
-	ac.currOut = circuitIn
-	for i := 0; i < ac.n; i++ {
-		if !feedbackMode {
-			ac.as[i].Reset()
+	i := 0
+	for {
+		amp, nxtAmp := ac.as[i%ac.n], ac.as[(i+1)%ac.n]
+		if err := amp.Run(amp.input); err != nil {
+			return amp.output, err
 		}
-		if err := ac.as[i].Run(ac.currOut); err != nil {
-			return ac.currOut, err
+		if amp.state == ampStateFinishedExecution {
+			break
 		}
+
+		nxtAmp.input = amp.output
+		i++
 	}
-	return ac.currOut, nil
+
+	return ac.as[ac.n-1].output, nil
 }

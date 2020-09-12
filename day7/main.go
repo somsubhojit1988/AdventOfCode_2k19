@@ -75,10 +75,8 @@ func maxOf(x, y int) int {
 	return y
 }
 
-func part1() {
-	inputFile := "day7-part1-input.txt"
-	instructions, inputs := readInput(inputFile), generateInputs(5, 0, 4)
-	n := 5
+func run(nAmps, pHigh, pLow int, feedback bool, inputFile string) int {
+	instructions, inputs := readInput(inputFile), generateInputs(nAmps, pLow, pHigh)
 	maxBoost := 0
 
 	for _, in := range inputs {
@@ -87,7 +85,7 @@ func part1() {
 			panic(err)
 		}
 		ps := func() []int {
-			ret := make([]int, n)
+			ret := make([]int, nAmps)
 			for i := 0; i < 5; i++ {
 				ret[i] = input % 10
 				input = input / 10
@@ -96,19 +94,32 @@ func part1() {
 		}()
 
 		logger := intcomputer.CreateLogger()
-		c := amplifier.CreateAmpCircuit(n, ps, instructions, logger)
+		c := amplifier.CreateAmpCircuit(nAmps, ps, instructions, logger, feedback)
 		ret, err := c.Run(0, false)
 		if err != nil {
 			panic(err)
 		}
 		maxBoost = maxOf(maxBoost, ret)
-		fmt.Printf("Amp Circuit phases: %v o/p= %d [MaxThrust= %d] \n",
-			ps, ret, maxBoost)
+		// fmt.Printf("Amp Circuit phases: %v o/p= %d [MaxThrust= %d] \n",
+		// 	ps, ret, maxBoost)
 	}
 
-	fmt.Printf("Max Boost: %d\n", maxBoost)
+	return maxBoost
+}
+
+func part1() {
+	n, pLow, pHigh, inputFile := 5, 0, 4, "day7-part1-input.txt"
+	maxBoost := run(n, pHigh, pLow, false, inputFile)
+	fmt.Printf("[Part-1] Max Boost: %d\n", maxBoost)
+}
+
+func part2() {
+	n, pLow, pHigh, inputFile := 5, 5, 9, "day7-part1-input.txt"
+	maxBoost := run(n, pHigh, pLow, true, inputFile)
+	fmt.Printf("[Part-2] Max Boost: %d\n", maxBoost)
 }
 
 func main() {
 	part1()
+	part2()
 }
