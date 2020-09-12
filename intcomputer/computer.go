@@ -53,50 +53,9 @@ type IntComputer struct {
 	InFunc  InputMethod
 	OutFunc OutputMethod
 	logger  *Logger
-	flags   int16
-}
 
-func decode(ins int) *Instruction {
-	// return opcode, {param-1-addrMode, parma-2-addrMode, ...}
-	parse := func(in int) (int, []int) {
-		op := in % 100
-		in /= 100
-
-		var ret []int
-		switch op {
-		case Add, Mul, LessThan, Equals:
-			// 3 parameters
-			ret = make([]int, 3)
-			ret[0] = in % 10
-			in /= 10
-			ret[1] = in % 10
-			in /= 10
-			ret[2] = Immediate // param value gives address to store results to
-		case Input, Output:
-			// 1 parameter
-			ret = make([]int, 1)
-			if op == Input {
-				ret[0] = Immediate
-			} else {
-				ret[0] = in % 10
-			}
-		case JmpIfTrue, JmpIfFalse:
-			// 2 parameters
-			ret = make([]int, 2)
-			ret[0] = in % 10
-			in /= 10
-			ret[1] = in % 10
-		default:
-			// 0 params ex: Halt
-			ret = make([]int, 0)
-		}
-		return op, ret
-	}
-	op, addrModes := parse(ins)
-	return &Instruction{
-		Opcode:         op,
-		ParamAddrModes: addrModes,
-	}
+	//  xxxx xxxx xxxx b3 b2 b1 Halt
+	flags int16
 }
 
 func (c *IntComputer) readParams(ins *Instruction) ([]int, error) {
@@ -220,11 +179,12 @@ func (c *IntComputer) output(ins *Instruction) error {
 }
 
 func (c *IntComputer) halt() {
-	c.InPtr = c.Mem.Size()
+	// set flag-0th bit of
+	c.flags |= 0x01
 }
 
 func (c *IntComputer) isHalted() bool {
-	return c.InPtr >= c.Mem.Size()
+	return ((c.flags & 0x01) != 0)
 }
 
 func (c *IntComputer) execute() error {
